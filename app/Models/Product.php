@@ -4,19 +4,37 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Company;
 
 class Product extends Model
 {
     use HasFactory;
 
-    // ✅ fillableはこの中に書きます（クラスの外ではなく中）
+    /**
+     * 一括代入可能なカラム
+     */
     protected $fillable = [
-        'name',
-        'maker_name',
+        'product_name',
+        'company_id',
         'price',
         'stock',
         'comment',
-        'image_path',
+        'img_path',
     ];
-}
 
+    /**
+     * 型キャスト
+     */
+    protected $casts = [
+        'price' => 'integer',  // 必要に応じて float に
+        'stock' => 'integer',
+    ];
+
+    /**
+     * 会社（メーカー）とのリレーション
+     */
+    public function company()
+    {
+        return $this->belongsTo(Company::class, 'company_id');
+    }
+}

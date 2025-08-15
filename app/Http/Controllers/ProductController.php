@@ -2,98 +2,147 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use App\Models\Product;
+use App\Models\Company;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class ProductController extends Controller
 {
     /**
      * 商品一覧画面
      */
-    public function index()
+    public function index(Request $request)
     {
-        $products = Product::all();
-        return view('products.index', compact('products'));
+        $query = Product::with('company');
+
+        // キーワード検索
+        if ($request->filled('keyword')) {
+            $query->where('product_name', 'like', '%' . $request->keyword . '%');
+        }
+
+        // メーカーで絞り込み
+        if ($request->filled('company_id')) {
+            $query->where('company_id', $request->company_id);
+        }
+
+        $products = $query->orderBy('created_at', 'desc')->paginate(10);
+        $companies = $this->getCompanies();
+
+        return view('products.index', compact('products', 'companies'));
     }
 
     /**
-     * 商品新規作成画面を表示
+     * 商品新規作成画面
      */
     public function create()
     {
-        return view('products.create');
+        $companies = $this->getCompanies(); // セレクトボックス用のメーカー一覧
+        return view('products.create', compact('companies'));
     }
 
     /**
-     * 商品を新規登録
+     * 商品を保存（登録）
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'maker_name' => 'required|string|max:255',
-            'price' => 'required|numeric|min:0',
-            'stock' => 'required|integer|min:0',
-            'comment' => 'nullable|string|max:1000',
-            'image' => 'nullable|image|max:2048',
-        ]);
+        $validated = $this->validateProduct($request);
 
-        if ($request->hasFile('image')) {
-            $path = $request->file('image')->store('products', 'public');
-            $validated['image_path'] = $path;
+        try {
+            // 画像があれば保存
+            if ($request->hasFile('image')) {
+                $imagePath = $request->file('image')->store('images', 'public');
+                $validated['img_path'] = $imagePath;
+            }
+
+            // データベースへ保存
+            Product::create($validated);
+
+            return redirect()->route('products.index')->with('success', '商品を登録しました。');
+        } catch (\Exception $e) {
+            Log::error('【商品登録エラー】' . $e->getMessage());
+
+            return back()
+                ->withErrors(['error' => '商品の登録に失敗しました。システム管理者に連絡してください。'])
+                ->withInput();
         }
-
-        Product::create($validated);
-
-        return redirect()->route('products.index')->with('success', '商品を登録しました');
     }
 
     /**
      * 商品詳細画面
      */
-    public function show(Product $product)
+    public function show($id)
     {
+        $product = Product::with('company')->findOrFail($id); // 関連会社名も取得
         return view('products.show', compact('product'));
     }
 
     /**
      * 商品編集画面
      */
-    public function edit(Product $product)
+    public function edit($id)
     {
-        return view('products.edit', compact('product'));
+        $product   = Product::findOrFail($id);
+        $companies = $this->getCompanies(); // メーカー一覧も渡す
+
+        return view('products.edit', compact('product', 'companies'));
     }
 
     /**
-     * 商品更新処理
+     * 商品を更新
      */
-    public function update(Request $request, Product $product)
+    public function update(Request $request, $id)
     {
+        // バリデーション（storeと合わせる）
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'maker_name' => 'required|string|max:255',
-            'price' => 'required|numeric|min:0',
-            'stock' => 'required|integer|min:0',
-            'comment' => 'nullable|string|max:1000',
-            'image' => 'nullable|image|max:2048',
+            'product_name' => 'required|string|max:255',
+            'company_id'   => 'required|exists:companies,id',
+            'price'        => 'required|numeric|min:0',
+            'stock'        => 'required|integer|min:0',
+            'comment'      => 'nullable|string|max:1000',
+            'image'        => 'nullable|image|max:2048',
         ]);
 
+        $product = Product::findOrFail($id);
+
+        // データ更新
+        $product->product_name = $validated['product_name'];
+        $product->company_id   = $validated['company_id'];
+        $product->price        = $validated['price'];
+        $product->stock        = $validated['stock'];
+        $product->comment      = $validated['comment'] ?? null;
+
+        // 画像がアップロードされた場合
         if ($request->hasFile('image')) {
-            $path = $request->file('image')->store('products', 'public');
-            $validated['image_path'] = $path;
+            $path = $request->file('image')->store('images', 'public');
+            $product->img_path = $path;
         }
 
-        $product->update($validated);
+        $product->save();
 
-        return redirect()->route('products.show', $product->id)->with('success', '商品を更新しました');
+        return redirect()->route('products.index')->with('success', '商品を更新しました。');
     }
 
     /**
-     * 商品削除処理
+     * バリデーションルール
      */
-    public function destroy(Product $product)
+    protected function validateProduct(Request $request): array
     {
-        $product->delete();
-        return redirect()->route('products.index')->with('success', '商品を削除しました');
+        return $request->validate([
+            'product_name' => 'required|string|max:255',
+            'company_id'   => 'required|exists:companies,id',
+            'price'        => 'required|numeric|min:0',
+            'stock'        => 'required|integer|min:0',
+            'comment'      => 'nullable|string|max:1000',
+            'image'        => 'nullable|image|max:2048',
+        ]);
+    }
+
+    /**
+     * メーカー一覧を取得（セレクトボックス用）
+     */
+    protected function getCompanies()
+    {
+        return Company::orderBy('company_name')->get();
     }
 }
