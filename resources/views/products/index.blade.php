@@ -60,8 +60,8 @@
                 <td>{{ $product->stock }}</td>
                 <td>{{ $product->company->company_name ?? '-' }}</td>
                 <td>
+                    <!-- 操作ボタン：詳細 & 削除のみ -->
                     <a href="{{ route('products.show', $product->id) }}" class="btn btn-info btn-sm">詳細</a>
-                    <a href="{{ route('products.edit', $product->id) }}" class="btn btn-primary btn-sm">更新</a>
                     <form action="{{ route('products.destroy', $product->id) }}" method="POST" style="display:inline;">
                         @csrf
                         @method('DELETE')
@@ -79,8 +79,3 @@
     </div>
 </div>
 @endsection
-@if(session('success'))
-    <div class="alert alert-success">
-        {{ session('success') }}
-    </div>
-@endif

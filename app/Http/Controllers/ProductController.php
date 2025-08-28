@@ -6,6 +6,9 @@ use App\Models\Product;
 use App\Models\Company;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
 
 class ProductController extends Controller
 {
@@ -27,7 +30,9 @@ class ProductController extends Controller
         }
 
         $products = $query->orderBy('created_at', 'desc')->paginate(10);
-        $companies = $this->getCompanies();
+
+        // ▼ 検索フォームのセレクトボックス用にメーカー一覧を取得
+        $companies = Company::orderBy('company_name')->get();
 
         return view('products.index', compact('products', 'companies'));
     }
@@ -37,29 +42,29 @@ class ProductController extends Controller
      */
     public function create()
     {
-        $companies = $this->getCompanies(); // セレクトボックス用のメーカー一覧
+        // ▼ 新規登録フォームのセレクトボックス用にメーカー一覧を取得
+        $companies = Company::orderBy('company_name')->get();
+
         return view('products.create', compact('companies'));
     }
 
     /**
      * 商品を保存（登録）
      */
-    public function store(Request $request)
+    public function store(StoreProductRequest $request)
     {
-        $validated = $this->validateProduct($request);
+        $validated = $request->validated();
 
         try {
             // 画像があれば保存
             if ($request->hasFile('image')) {
-                $imagePath = $request->file('image')->store('images', 'public');
-                $validated['img_path'] = $imagePath;
+                $validated['img_path'] = $request->file('image')->store('images', 'public'); 
             }
 
-            // データベースへ保存
             Product::create($validated);
 
             return redirect()->route('products.index')->with('success', '商品を登録しました。');
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('【商品登録エラー】' . $e->getMessage());
 
             return back()
@@ -71,19 +76,19 @@ class ProductController extends Controller
     /**
      * 商品詳細画面
      */
-    public function show($id)
+    public function show(Product $product) // ルートモデルバインディング {product}
     {
-        $product = Product::with('company')->findOrFail($id); // 関連会社名も取得
+        $product->load('company'); // メーカー名を eager load
         return view('products.show', compact('product'));
     }
 
     /**
      * 商品編集画面
      */
-    public function edit($id)
+    public function edit(Product $product) // ルートモデルバインディング {product}
     {
-        $product   = Product::findOrFail($id);
-        $companies = $this->getCompanies(); // メーカー一覧も渡す
+        // ▼ 編集フォームのセレクトボックス用にメーカー一覧を取得
+        $companies = Company::orderBy('company_name')->get();
 
         return view('products.edit', compact('product', 'companies'));
     }
@@ -91,58 +96,21 @@ class ProductController extends Controller
     /**
      * 商品を更新
      */
-    public function update(Request $request, $id)
+    public function update(UpdateProductRequest $request, Product $product)
     {
-        // バリデーション（storeと合わせる）
-        $validated = $request->validate([
-            'product_name' => 'required|string|max:255',
-            'company_id'   => 'required|exists:companies,id',
-            'price'        => 'required|numeric|min:0',
-            'stock'        => 'required|integer|min:0',
-            'comment'      => 'nullable|string|max:1000',
-            'image'        => 'nullable|image|max:2048',
-        ]);
+        $validated = $request->validated();
 
-        $product = Product::findOrFail($id);
-
-        // データ更新
-        $product->product_name = $validated['product_name'];
-        $product->company_id   = $validated['company_id'];
-        $product->price        = $validated['price'];
-        $product->stock        = $validated['stock'];
-        $product->comment      = $validated['comment'] ?? null;
-
-        // 画像がアップロードされた場合
+        // 画像差し替え処理
         if ($request->hasFile('image')) {
-            $path = $request->file('image')->store('images', 'public');
-            $product->img_path = $path;
+            // 古い画像があれば削除
+            if (!empty($product->img_path)) {
+                Storage::disk('public')->delete($product->img_path);
+            }
+            $validated['img_path'] = $request->file('image')->store('images', 'public');
         }
 
-        $product->save();
+        $product->update($validated);
 
-        return redirect()->route('products.index')->with('success', '商品を更新しました。');
-    }
-
-    /**
-     * バリデーションルール
-     */
-    protected function validateProduct(Request $request): array
-    {
-        return $request->validate([
-            'product_name' => 'required|string|max:255',
-            'company_id'   => 'required|exists:companies,id',
-            'price'        => 'required|numeric|min:0',
-            'stock'        => 'required|integer|min:0',
-            'comment'      => 'nullable|string|max:1000',
-            'image'        => 'nullable|image|max:2048',
-        ]);
-    }
-
-    /**
-     * メーカー一覧を取得（セレクトボックス用）
-     */
-    protected function getCompanies()
-    {
-        return Company::orderBy('company_name')->get();
+        return redirect()->route('products.show', $product)->with('success', '商品を更新しました');
     }
 }
