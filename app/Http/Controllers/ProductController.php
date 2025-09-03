@@ -13,7 +13,7 @@ use App\Http\Requests\UpdateProductRequest;
 class ProductController extends Controller
 {
     /**
-     * 商品一覧画面
+     * 商品一覧画面（初回表示はサーバーサイド、再検索はJSでAPIに委譲）
      */
     public function index(Request $request)
     {
@@ -29,9 +29,10 @@ class ProductController extends Controller
             $query->where('company_id', $request->company_id);
         }
 
-        $products = $query->orderBy('created_at', 'desc')->paginate(10);
+        // 初回描画はSSRでOK（以降はフロントから /api/products を叩く）
+        $products  = $query->orderBy('created_at', 'desc')->paginate(10);
 
-        // ▼ 検索フォームのセレクトボックス用にメーカー一覧を取得
+        // 検索フォーム用メーカー一覧
         $companies = Company::orderBy('company_name')->get();
 
         return view('products.index', compact('products', 'companies'));
@@ -42,9 +43,7 @@ class ProductController extends Controller
      */
     public function create()
     {
-        // ▼ 新規登録フォームのセレクトボックス用にメーカー一覧を取得
         $companies = Company::orderBy('company_name')->get();
-
         return view('products.create', compact('companies'));
     }
 
@@ -56,9 +55,8 @@ class ProductController extends Controller
         $validated = $request->validated();
 
         try {
-            // 画像があれば保存
             if ($request->hasFile('image')) {
-                $validated['img_path'] = $request->file('image')->store('images', 'public'); 
+                $validated['img_path'] = $request->file('image')->store('images', 'public');
             }
 
             Product::create($validated);
@@ -76,20 +74,18 @@ class ProductController extends Controller
     /**
      * 商品詳細画面
      */
-    public function show(Product $product) // ルートモデルバインディング {product}
+    public function show(Product $product)
     {
-        $product->load('company'); // メーカー名を eager load
+        $product->load('company');
         return view('products.show', compact('product'));
     }
 
     /**
      * 商品編集画面
      */
-    public function edit(Product $product) // ルートモデルバインディング {product}
+    public function edit(Product $product)
     {
-        // ▼ 編集フォームのセレクトボックス用にメーカー一覧を取得
         $companies = Company::orderBy('company_name')->get();
-
         return view('products.edit', compact('product', 'companies'));
     }
 
@@ -100,9 +96,7 @@ class ProductController extends Controller
     {
         $validated = $request->validated();
 
-        // 画像差し替え処理
         if ($request->hasFile('image')) {
-            // 古い画像があれば削除
             if (!empty($product->img_path)) {
                 Storage::disk('public')->delete($product->img_path);
             }

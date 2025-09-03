@@ -1,20 +1,20 @@
 <?php
 
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\ProductApiController;
 
 /*
 |--------------------------------------------------------------------------
 | API Routes
 |--------------------------------------------------------------------------
 |
-| Here is where you can register API routes for your application. These
-| routes are loaded by the RouteServiceProvider within a group which
-| is assigned the "api" middleware group. Enjoy building your API!
+| ここではアプリケーションの API ルートを定義します。
+| このファイルで定義したルートには自動的に "/api" プレフィックスが付与されます。
+| 例: http://127.0.0.1:8000/api/products
 |
 */
 
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-    return $request->user();
-});
-Route::get('/manufacturers', [ManufacturerController::class, 'index']);
+// 商品一覧・検索API
+Route::get('/products', [ProductApiController::class, 'index'])
+    ->name('api.products.index');
+Route::get('/products', [ProductApiController::class, 'index'])->name('api.products.index');
