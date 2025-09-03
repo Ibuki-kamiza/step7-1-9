@@ -8,24 +8,25 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         Schema::create('sales', function (Blueprint $table) {
             $table->id();
 
-            // ユーザーが削除されたとき、NULL に設定される
+            // 購入したユーザーID（ログインしてない購入もありえるのでnullable）
             $table->foreignId('user_id')
                   ->nullable()
                   ->constrained()
                   ->onDelete('set null');
 
-            // 商品が削除されたとき、このレコードも削除
+            // 購入した商品ID
             $table->foreignId('product_id')
-                  ->constrained('products') // ← 明示的に 'products' テーブルを指定
+                  ->constrained('products')
                   ->onDelete('cascade');
+
+            // 購入数量
+            $table->integer('quantity')->default(1);
 
             $table->timestamps(); // created_at, updated_at
         });
@@ -33,10 +34,8 @@ return new class extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         Schema::dropIfExists('sales');
     }
