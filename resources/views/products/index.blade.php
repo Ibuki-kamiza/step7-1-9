@@ -3,9 +3,9 @@
 
 @section('content')
 <div class="container mt-5">
-    <h2 class="mb-4 text-center">商品一覧画面（非同期検索）</h2>
+    <h2 class="mb-4 text-center">商品一覧画面（非同期検索・ソート・削除対応）</h2>
 
-    {{-- 検索フォーム --}}
+    {{-- 🔍 検索フォーム --}}
     <form id="searchForm" class="search-form mb-4 d-flex flex-wrap gap-2">
         {{-- キーワード --}}
         <input id="keyword" type="text" name="keyword" class="form-control" placeholder="検索キーワード" style="max-width:200px;">
@@ -31,20 +31,20 @@
         <button type="submit" class="btn btn-secondary">検索</button>
     </form>
 
-    {{-- 新規登録 --}}
+    {{-- 📝 新規登録 --}}
     <div class="text-end mb-3">
         <a href="{{ route('products.create') }}" class="btn btn-warning">新規登録</a>
     </div>
 
-    {{-- 一覧テーブル --}}
+    {{-- 📋 商品一覧テーブル --}}
     <table class="table table-bordered">
         <thead>
             <tr>
-                <th>ID</th>
+                <th class="sortable" data-sort="id">ID <span class="sort-indicator"></span></th>
                 <th>商品画像</th>
-                <th>商品名</th>
-                <th>価格</th>
-                <th>在庫数</th>
+                <th class="sortable" data-sort="product_name">商品名 <span class="sort-indicator"></span></th>
+                <th class="sortable" data-sort="price">価格 <span class="sort-indicator"></span></th>
+                <th class="sortable" data-sort="stock">在庫数 <span class="sort-indicator"></span></th>
                 <th>メーカー名</th>
                 <th>操作</th>
             </tr>
@@ -60,42 +60,60 @@
 @endsection
 
 @push('scripts')
+<style>
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable .sort-indicator { opacity: 0.6; margin-left: 4px; }
+</style>
+
 <script>
 $(function() {
   const endpoint = '/api/products';
-  let lastParams = {};
+  let lastParams = { sort_by: 'id', sort_order: 'desc' };
 
   // 初回ロード
-  lastParams = currentParams();
-  fetchProducts(endpoint, lastParams);
+  fetchProducts(endpoint, currentParams());
+  updateSortIndicators();
 
-  // 検索フォーム送信（非同期）
+  // 🔍 検索フォーム送信
   $('#searchForm').on('submit', function(e) {
     e.preventDefault();
-    lastParams = currentParams();
-    fetchProducts(endpoint, lastParams);
+    fetchProducts(endpoint, currentParams());
   });
 
-  // メーカー変更ですぐ検索（任意）
+  // メーカー変更ですぐ検索
   $('#company_id').on('change', function() {
-    lastParams = currentParams();
-    fetchProducts(endpoint, lastParams);
+    fetchProducts(endpoint, currentParams());
   });
 
-  // 現在のフォーム値をAPIパラメータにまとめる
+  // 🔽 ソートクリック
+  $(document).on('click', 'th.sortable', function() {
+    const col = $(this).data('sort');
+    if (lastParams.sort_by === col) {
+      lastParams.sort_order = (lastParams.sort_order === 'asc') ? 'desc' : 'asc';
+    } else {
+      lastParams.sort_by = col;
+      lastParams.sort_order = 'asc';
+    }
+    updateSortIndicators();
+    fetchProducts(endpoint, currentParams());
+  });
+
+  // 現在のフォーム値
   function currentParams() {
     return {
-      keyword:   $('#keyword').val(),
-      company_id:$('#company_id').val(),
-      price_min: $('#price_min').val(),
-      price_max: $('#price_max').val(),
-      stock_min: $('#stock_min').val(),
-      stock_max: $('#stock_max').val(),
-      per_page:  10
+      keyword:    $('#keyword').val(),
+      company_id: $('#company_id').val(),
+      price_min:  $('#price_min').val(),
+      price_max:  $('#price_max').val(),
+      stock_min:  $('#stock_min').val(),
+      stock_max:  $('#stock_max').val(),
+      per_page:   10,
+      sort_by:    lastParams.sort_by,
+      sort_order: lastParams.sort_order
     };
   }
 
-  // API取得
+  // 商品取得
   function fetchProducts(url, params) {
     $('#productTbody').html('<tr><td colspan="7" class="text-center">読み込み中...</td></tr>');
     $.get(url, params)
@@ -117,9 +135,9 @@ $(function() {
     }
     const rows = items.map(function(p) {
       const img = p.image_url ? `<img src="${p.image_url}" width="50">` : '-';
-      const company = p.company && p.company.name ? p.company.name : '-';
+      const company = p.company?.name ?? '-';
       return `
-        <tr>
+        <tr id="row-${p.id}">
           <td>${p.id}</td>
           <td>${img}</td>
           <td>${escapeHtml(p.product_name || '')}</td>
@@ -128,11 +146,7 @@ $(function() {
           <td>${escapeHtml(company)}</td>
           <td>
             <a href="/products/${p.id}" class="btn btn-info btn-sm">詳細</a>
-            <form action="/products/${p.id}" method="POST" style="display:inline;">
-              @csrf
-              @method('DELETE')
-              <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('削除しますか？')">削除</button>
-            </form>
+            <button type="button" class="btn btn-danger btn-sm js-delete" data-id="${p.id}">削除</button>
           </td>
         </tr>
       `;
@@ -140,7 +154,7 @@ $(function() {
     $('#productTbody').html(rows);
   }
 
-  // ページネーション描画
+  // ページネーション
   function renderPager(links, baseParams) {
     if (!Array.isArray(links) || !links.length) { $('#pager').empty(); return; }
     const html = links.map(function(l) {
@@ -154,13 +168,49 @@ $(function() {
     }).join('');
     $('#pager').html(html);
 
-    // クリックでAPI再リクエスト
     $('#pager .page-link').off('click').on('click', function(e) {
       e.preventDefault();
       const url = $(this).data('url');
       if (!url) return;
       fetchProducts(url, baseParams);
     });
+  }
+
+  // ✅ 非同期削除
+  $(document).on('click', '.js-delete', function () {
+    const id = $(this).data('id');
+    if (!confirm('削除しますか？')) return;
+
+    const $btn = $(this).prop('disabled', true);
+
+    $.ajax({
+      url: `/api/products/${id}`,
+      type: 'DELETE',
+      // headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') }
+    })
+    .done(function(res) {
+      if (res && res.ok) {
+        $(`#row-${id}`).remove();
+        if ($('#productTbody tr').length === 0) {
+          fetchProducts(endpoint, currentParams());
+        }
+      } else {
+        alert(res?.message || '削除に失敗しました');
+      }
+    })
+    .fail(function() {
+      alert('削除に失敗しました');
+    })
+    .always(function() {
+      $btn.prop('disabled', false);
+    });
+  });
+
+  // ソートインジケータ
+  function updateSortIndicators() {
+    $('th.sortable .sort-indicator').text('');
+    const th = $(`th.sortable[data-sort="${lastParams.sort_by}"]`).find('.sort-indicator');
+    th.text(lastParams.sort_order === 'asc' ? '▲' : '▼');
   }
 
   // XSS対策
